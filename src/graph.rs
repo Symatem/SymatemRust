@@ -142,7 +142,6 @@ enum TripleQueryFunc {
     SearchIII,
     SearchMMV,
     SearchMVV,
-    SearchMIV,
     SearchMVI,
     SearchVII,
     SearchVVI,
@@ -206,7 +205,7 @@ fn unlink_namespace(namespace_identity: Identity) -> bool {
         let mut namespace_index = namespace_index_cell.borrow_mut();
         match namespace_index.get(&namespace_identity) {
             Some(namespace_handle) => {
-                let mut triples: Vec<Triple> = Vec::new();
+                let mut triples: HashSet<Triple> = HashSet::new();
                 let mut triple: Triple = [Symbol{0: 0, 1: 0}; 3];
                 for (symbol_identity, symbol_handle) in namespace_handle.symbol_index.iter() {
                     triple[0] = Symbol{0: namespace_identity, 1: *symbol_identity};
@@ -217,13 +216,13 @@ fn unlink_namespace(namespace_identity: Identity) -> bool {
                             if beta.0 != namespace_identity {
                                 for gamma in gamma_self.iter() {
                                     triple[2] = *gamma;
-                                    triples.push(reorder_triple(&TRIPLE_NORMALIZED, *triple_index, &triple));
+                                    triples.insert(reorder_triple(&TRIPLE_NORMALIZED, *triple_index, &triple));
                                 }
                             } else {
                                 for gamma in gamma_self.iter() {
                                     if gamma.0 != namespace_identity {
                                         triple[2] = *gamma;
-                                        triples.push(reorder_triple(&TRIPLE_NORMALIZED, *triple_index, &triple));
+                                        triples.insert(reorder_triple(&TRIPLE_NORMALIZED, *triple_index, &triple));
                                     }
                                 }
                             }
@@ -347,9 +346,9 @@ pub fn crease_length(symbol: Symbol, offset: usize, length: isize) -> bool {
                     new_data_content[offset/bitops::ARCHITECTURE_SIZE] &= bitops::lsb_bitmask(offset%bitops::ARCHITECTURE_SIZE);
                 }
                 if length < 0 {
-                    bitops::bitwise_copy(&mut new_data_content, &symbol_handle.data_content.borrow(), offset, offset+length_abs, symbol_handle.data_length-offset-length_abs);
+                    bitops::bitwise_copy_nonoverlapping(&mut new_data_content, &symbol_handle.data_content.borrow(), offset, offset+length_abs, symbol_handle.data_length-offset-length_abs);
                 } else {
-                    bitops::bitwise_copy(&mut new_data_content, &symbol_handle.data_content.borrow(), offset+length_abs, offset, symbol_handle.data_length-offset);
+                    bitops::bitwise_copy_nonoverlapping(&mut new_data_content, &symbol_handle.data_content.borrow(), offset+length_abs, offset, symbol_handle.data_length-offset);
                 }
                 symbol_handle.data_length = new_data_length;
                 symbol_handle.data_content.replace(new_data_content);
@@ -418,7 +417,7 @@ pub fn replace_data(dst_symbol: Symbol, dst_offset: usize, src_symbol: Symbol, s
         if dst_offset+length > dst_symbol_handle.data_length || src_offset+length > src_symbol_handle.data_length {
             return false;
         }
-        bitops::bitwise_copy(&mut dst_symbol_handle.data_content.borrow_mut(), &src_symbol_handle.data_content.borrow(), dst_offset, src_offset, length);
+        bitops::bitwise_copy_nonoverlapping(&mut dst_symbol_handle.data_content.borrow_mut(), &src_symbol_handle.data_content.borrow(), dst_offset, src_offset, length);
         true
     })
 }
@@ -534,8 +533,10 @@ pub fn query_triples(mask: usize, mut triple: Triple) -> Vec<Triple> {
             },
             TripleQueryFunc::SearchMII => {
                 match get_symbol_handle(&namespace_index, triple[0]) {
-                    Some(_) => {
-                        result.push(reorder_triple(&TRIPLE_NORMALIZED, triple_index, &triple));
+                    Some(symbol_handle) => {
+                        if !symbol_handle.subindices[triple_index as usize].is_empty() {
+                            result.push(reorder_triple(&TRIPLE_NORMALIZED, triple_index, &triple));
+                        }
                     },
                     None => {}
                 }
@@ -575,23 +576,6 @@ pub fn query_triples(mask: usize, mut triple: Triple) -> Vec<Triple> {
                                 triple[2] = *gamma;
                                 result.push(reorder_triple(&TRIPLE_NORMALIZED, triple_index, &triple));
                             }
-                        }
-                    },
-                    None => {}
-                }
-            },
-            TripleQueryFunc::SearchMIV => {
-                match get_symbol_handle(&namespace_index, triple[0]) {
-                    Some(symbol_handle) => {
-                        let mut gammas: HashSet<Symbol> = HashSet::new();
-                        for gamma_self in symbol_handle.subindices[triple_index as usize].values() {
-                            for gamma in gamma_self.iter() {
-                                gammas.insert(*gamma);
-                            }
-                        }
-                        for gamma in gammas.iter() {
-                            triple[2] = *gamma;
-                            result.push(reorder_triple(&TRIPLE_NORMALIZED, triple_index, &triple));
                         }
                     },
                     None => {}

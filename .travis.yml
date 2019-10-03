@@ -7,11 +7,11 @@ before_script:
 script:
   wasm-pack build --target web
 before_deploy:
-  xz -zec pkg/symatem_bg.wasm > symatem.wasm.xz
+  mv pkg/symatem_bg.wasm symatem.wasm
 deploy:
   edge: true
   provider: releases
   token: $GITHUB_TOKEN
-  file: symatem.wasm.xz
+  file: symatem.wasm
   on:
     tags: true

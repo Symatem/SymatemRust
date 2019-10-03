@@ -82,10 +82,40 @@ impl BitwiseWrite<'_> {
     }
 }
 
-pub fn bitwise_copy(dst: &mut[usize], src: &[usize], dst_offset: usize, src_offset: usize, length: usize) {
-    let bitwise_read = BitwiseRead::new(src, length, src_offset);
-    let mut bitwise_write = BitwiseWrite::new(dst, length, dst_offset);
-    for element in bitwise_read {
-        bitwise_write.next(element);
+pub fn bitwise_copy_nonoverlapping(dst: &mut[usize], src: &[usize], dst_offset: usize, src_offset: usize, length: usize) {
+    if length == 0 {
+        return;
+    }
+    if dst_offset%ARCHITECTURE_SIZE == 0 && src_offset%ARCHITECTURE_SIZE == 0 {
+        let mut last_index = (length+ARCHITECTURE_SIZE-1)/ARCHITECTURE_SIZE;
+        if length%ARCHITECTURE_SIZE > 0 {
+            last_index -= 1;
+            let last_in_dst = &mut dst[dst_offset/ARCHITECTURE_SIZE+last_index];
+            let mask = lsb_bitmask(length%ARCHITECTURE_SIZE);
+            *last_in_dst = (*last_in_dst&!mask)|(src[src_offset/ARCHITECTURE_SIZE+last_index]&mask);
+        }
+        for index in 0..last_index {
+            dst[dst_offset/ARCHITECTURE_SIZE+index] = src[src_offset/ARCHITECTURE_SIZE+index];
+        }
+    } else if dst_offset%8 == 0 && src_offset%8 == 0 {
+        let dst_bytes: *mut u8 = unsafe { (dst.as_mut_ptr() as *mut u8).offset((dst_offset/8) as isize) };
+        let src_bytes: *const u8 = unsafe { (src.as_ptr() as *const u8).offset((src_offset/8) as isize) };
+        let mut last_index = (length+7)/8;
+        if length%8 > 0 {
+            last_index -= 1;
+            let last_in_dst = unsafe { dst_bytes.offset(last_index as isize) };
+            let mask = lsb_bitmask(length%8) as u8;
+            unsafe { *last_in_dst = ((*last_in_dst)&(!mask))|((*src_bytes.offset(last_index as isize))&mask) };
+        }
+        // for index in 0..last_index {
+        //     unsafe { *dst_bytes.offset(index as isize) = *src_bytes.offset(index as isize); }
+        // }
+        unsafe { std::ptr::copy_nonoverlapping(src_bytes, dst_bytes, last_index); }
+    } else {
+        let bitwise_read = BitwiseRead::new(src, length, src_offset);
+        let mut bitwise_write = BitwiseWrite::new(dst, length, dst_offset);
+        for element in bitwise_read {
+            bitwise_write.next(element);
+        }
     }
 }
