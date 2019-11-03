@@ -196,7 +196,7 @@ fn manifest_namespace(namespace_index: &mut NamespaceIndex, namespace_identity: 
     }
     let namespace_handle = NamespaceHandle{free_pool: IdentityPool::new(), symbol_index: AlphaCollection::new()};
     assert!(namespace_index.insert(namespace_identity, namespace_handle).is_none());
-    get_symbol_handle_mut(namespace_index, Symbol{0: META_NAMESPACE, 1: namespace_identity}, true);
+    manifest_symbol_internal(namespace_index, Symbol{0: META_NAMESPACE, 1: namespace_identity});
     return namespace_index.get_mut(&namespace_identity).unwrap();
 }
 
@@ -240,20 +240,10 @@ fn unlink_namespace(namespace_identity: Identity) -> bool {
     })
 }
 
-fn get_symbol_handle_mut(namespace_index: &mut NamespaceIndex, symbol: Symbol, manifest: bool) -> Option<&mut SymbolHandle> {
-    if manifest {
-        let namespace_handle = manifest_namespace(namespace_index, symbol.0);
-        if !namespace_handle.symbol_index.contains_key(&symbol.1) {
-            let symbol_handle = SymbolHandle{data_content: RefCell::new(Box::new([])), data_length: 0, subindices: [BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new()]};
-            assert!(namespace_handle.symbol_index.insert(symbol.1, symbol_handle).is_none());
-            assert!(namespace_handle.free_pool.remove(symbol.1));
-        }
-        return namespace_handle.symbol_index.get_mut(&symbol.1);
-    } else {
-        match namespace_index.get_mut(&symbol.0) {
-            Some(namespace_handle) => namespace_handle.symbol_index.get_mut(&symbol.1),
-            None => None
-        }
+fn get_symbol_handle_mut(namespace_index: &mut NamespaceIndex, symbol: Symbol) -> Option<&mut SymbolHandle> {
+    match namespace_index.get_mut(&symbol.0) {
+        Some(namespace_handle) => namespace_handle.symbol_index.get_mut(&symbol.1),
+        None => None
     }
 }
 
@@ -264,11 +254,22 @@ fn get_symbol_handle(namespace_index: &NamespaceIndex, symbol: Symbol) -> Option
     }
 }
 
-pub fn manifest_symbol(symbol: Symbol) {
+fn manifest_symbol_internal(namespace_index: &mut NamespaceIndex, symbol: Symbol) -> bool {
+    let namespace_handle = manifest_namespace(namespace_index, symbol.0);
+    if namespace_handle.symbol_index.contains_key(&symbol.1) {
+        return false;
+    }
+    let symbol_handle = SymbolHandle{data_content: RefCell::new(Box::new([])), data_length: 0, subindices: [BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new()]};
+    assert!(namespace_handle.symbol_index.insert(symbol.1, symbol_handle).is_none());
+    assert!(namespace_handle.free_pool.remove(symbol.1));
+    return true;
+}
+
+pub fn manifest_symbol(symbol: Symbol) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
-        get_symbol_handle_mut(&mut namespace_index, symbol, true);
-    });
+        manifest_symbol_internal(&mut namespace_index, symbol)
+    })
 }
 
 pub fn create_symbol(namespace_identity: Identity) -> Symbol {
@@ -277,7 +278,7 @@ pub fn create_symbol(namespace_identity: Identity) -> Symbol {
         let namespace_handle = manifest_namespace(&mut namespace_index, namespace_identity);
         let symbol_identity: Identity = namespace_handle.free_pool.get();
         let symbol = Symbol{0: namespace_identity, 1: symbol_identity};
-        get_symbol_handle_mut(&mut namespace_index, symbol, true);
+        manifest_symbol_internal(&mut namespace_index, symbol);
         symbol
     })
 }
@@ -293,13 +294,13 @@ pub fn release_symbol(symbol: Symbol) -> bool {
                     } else {
                         assert!(namespace_handle.free_pool.insert(symbol.1));
                     }
+                    return true;
                 } else {
                     return false;
                 }
             },
             None => { return false; }
         };
-        true
     }) {
         if symbol.0 == META_NAMESPACE {
             assert!(unlink_namespace(symbol.1));
@@ -323,7 +324,7 @@ pub fn get_length(symbol: Symbol) -> usize {
 pub fn crease_length(symbol: Symbol, offset: usize, length: isize) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
-        match get_symbol_handle_mut(&mut namespace_index, symbol, false) {
+        match get_symbol_handle_mut(&mut namespace_index, symbol) {
             Some(symbol_handle) => {
                 let length_abs: usize;
                 if length < 0 {
@@ -384,7 +385,7 @@ pub fn read_data(symbol: Symbol, offset: usize, length: usize, dst: &mut [usize]
 pub fn write_data(symbol: Symbol, offset: usize, length: usize, src: &[usize]) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
-        match get_symbol_handle_mut(&mut namespace_index, symbol, false) {
+        match get_symbol_handle_mut(&mut namespace_index, symbol) {
             Some(symbol_handle) => {
                 if offset+length > symbol_handle.data_length {
                     return false;
@@ -456,7 +457,7 @@ fn set_triple_subindex(beta_self: &mut BetaCollection, beta: Symbol, gamma: Symb
 fn set_triple_internal(namespace_index: &mut NamespaceIndex, triple: Triple, linked: bool) -> bool {
     let mut result: bool = false;
     for triple_index in 0..3 {
-        match get_symbol_handle_mut(namespace_index, triple[triple_index], linked) {
+        match get_symbol_handle_mut(namespace_index, triple[triple_index]) {
             Some(entity_handle) => {
                 if set_triple_subindex(&mut entity_handle.subindices[triple_index], triple[(triple_index+1)%3], triple[(triple_index+2)%3], linked) {
                     result = true;

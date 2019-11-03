@@ -12,7 +12,7 @@ unsafe fn transmute_vec<S, T>(mut vec: Vec<S>) -> Vec<T> {
 }
 
 #[wasm_bindgen]
-pub fn manifestSymbol(namespace_identity: graph::Identity, symbol_identity: graph::Identity) {
+pub fn manifestSymbol(namespace_identity: graph::Identity, symbol_identity: graph::Identity) -> bool {
     graph::manifest_symbol(graph::Symbol{0: namespace_identity, 1: symbol_identity})
 }
 
