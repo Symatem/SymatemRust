@@ -455,19 +455,16 @@ fn set_triple_subindex(beta_self: &mut BetaCollection, beta: Symbol, gamma: Symb
 
 
 fn set_triple_internal(namespace_index: &mut NamespaceIndex, triple: Triple, linked: bool) -> bool {
+    for triple_index in 0..3 {
+        if get_symbol_handle_mut(namespace_index, triple[triple_index]).is_none() {
+            return false;
+        }
+    }
     let mut result: bool = false;
     for triple_index in 0..3 {
-        match get_symbol_handle_mut(namespace_index, triple[triple_index]) {
-            Some(entity_handle) => {
-                if set_triple_subindex(&mut entity_handle.subindices[triple_index], triple[(triple_index+1)%3], triple[(triple_index+2)%3], linked) {
-                    result = true;
-                }
-                if set_triple_subindex(&mut entity_handle.subindices[triple_index+3], triple[(triple_index+2)%3], triple[(triple_index+1)%3], linked) {
-                    result = true;
-                }
-            },
-            None => { }
-        }
+        let entity_handle = get_symbol_handle_mut(namespace_index, triple[triple_index]).unwrap();
+        result |= set_triple_subindex(&mut entity_handle.subindices[triple_index], triple[(triple_index+1)%3], triple[(triple_index+2)%3], linked);
+        result |= set_triple_subindex(&mut entity_handle.subindices[triple_index+3], triple[(triple_index+2)%3], triple[(triple_index+1)%3], linked);
     }
     result
 }
