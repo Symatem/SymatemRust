@@ -79,12 +79,12 @@ impl IdentityPool {
                     }
                     prev_range.begin+prev_range.length == identity
                 },
-                None => { false }
+                None => false
             }
         } else { false };
         let merge_next_range = match &collection.get(range_index) {
             Some(next_range) => { identity+1 == next_range.begin },
-            None => { false }
+            None => false
         };
         if merge_prev_range && merge_next_range {
             let is_not_last = range_index+1 < collection.len();
@@ -196,7 +196,6 @@ fn manifest_namespace(namespace_index: &mut NamespaceIndex, namespace_identity: 
     }
     let namespace_handle = NamespaceHandle{free_pool: IdentityPool::new(), symbol_index: AlphaCollection::new()};
     assert!(namespace_index.insert(namespace_identity, namespace_handle).is_none());
-    manifest_symbol_internal(namespace_index, Symbol{0: META_NAMESPACE, 1: namespace_identity});
     return namespace_index.get_mut(&namespace_identity).unwrap();
 }
 
@@ -235,7 +234,7 @@ fn unlink_namespace(namespace_identity: Identity) -> bool {
                 assert!(namespace_index.remove(&namespace_identity).is_some());
                 true
             },
-            None => { false }
+            None => false
         }
     })
 }
@@ -262,6 +261,9 @@ fn manifest_symbol_internal(namespace_index: &mut NamespaceIndex, symbol: Symbol
     let symbol_handle = SymbolHandle{data_content: RefCell::new(Box::new([])), data_length: 0, subindices: [BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new(), BetaCollection::new()]};
     assert!(namespace_handle.symbol_index.insert(symbol.1, symbol_handle).is_none());
     assert!(namespace_handle.free_pool.remove(symbol.1));
+    if symbol.0 == META_NAMESPACE {
+        manifest_namespace(namespace_index, symbol.1);
+    }
     return true;
 }
 
@@ -275,7 +277,8 @@ pub fn manifest_symbol(symbol: Symbol) -> bool {
 pub fn create_symbol(namespace_identity: Identity) -> Symbol {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
-        let namespace_handle = manifest_namespace(&mut namespace_index, namespace_identity);
+        manifest_symbol_internal(&mut namespace_index, Symbol(META_NAMESPACE, namespace_identity));
+        let namespace_handle = namespace_index.get_mut(&namespace_identity).unwrap();
         let symbol_identity: Identity = namespace_handle.free_pool.get();
         let symbol = Symbol{0: namespace_identity, 1: symbol_identity};
         manifest_symbol_internal(&mut namespace_index, symbol);
@@ -294,13 +297,11 @@ pub fn release_symbol(symbol: Symbol) -> bool {
                     } else {
                         assert!(namespace_handle.free_pool.insert(symbol.1));
                     }
-                    return true;
-                } else {
-                    return false;
-                }
+                    true
+                } else { false }
             },
-            None => { return false; }
-        };
+            None => false
+        }
     }) {
         if symbol.0 == META_NAMESPACE {
             assert!(unlink_namespace(symbol.1));
@@ -353,7 +354,7 @@ pub fn crease_length(symbol: Symbol, offset: usize, length: isize) -> bool {
                 }
                 symbol_handle.data_length = new_data_length;
                 symbol_handle.data_content.replace(new_data_content);
-                return true;
+                true
             },
             None => false
         }
@@ -375,7 +376,7 @@ pub fn read_data(symbol: Symbol, offset: usize, length: usize, dst: &mut [usize]
                     dst[index] = src;
                     index += 1;
                 }
-                return true;
+                true
             },
             None => false
         }
@@ -397,7 +398,7 @@ pub fn write_data(symbol: Symbol, offset: usize, length: usize, src: &[usize]) -
                     bitwise_write.next(src[index]);
                     index += 1;
                 }
-                return true;
+                true
             },
             None => false
         }
@@ -447,7 +448,7 @@ fn set_triple_subindex(beta_self: &mut BetaCollection, beta: Symbol, gamma: Symb
                 }
                 true
             },
-            None => { false }
+            None => false
         }
     }
 }
