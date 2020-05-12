@@ -1,119 +1,14 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::cell::RefCell;
-#[path="bitops.rs"]
-mod bitops;
+use crate::bitops;
+use crate::symbol;
 
-pub type Identity = usize;
+pub type Triple = [symbol::Symbol; 3];
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct Symbol(pub Identity, pub Identity);
-
-pub type Triple = [Symbol; 3];
-
-
-#[derive(Clone, Copy)]
-pub struct IdentityRange {
-    begin: Identity,
-    length: usize
-}
-
-pub struct IdentityPool(Vec<IdentityRange>);
-
-impl IdentityPool {
-    pub fn new() -> IdentityPool {
-        IdentityPool{0: vec![IdentityRange{begin: 0, length: 0}]}
-    }
-
-    pub fn get(&mut self) -> Identity {
-        self.0[0].begin
-    }
-
-    pub fn remove(&mut self, identity: Identity) -> bool {
-        let collection = &mut self.0;
-        let range_index = match collection.binary_search_by(|probe| if probe.begin <= identity { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }) {
-            Ok(index) => index,
-            Err(index) => index
-        };
-        if range_index == 0 || range_index > collection.len() {
-            return false;
-        }
-        let is_not_last = range_index < collection.len();
-        let mut range = &mut collection[range_index-1];
-        if is_not_last && identity >= range.begin+range.length {
-            return false;
-        }
-        if identity == range.begin {
-            range.begin += 1;
-            if is_not_last {
-                range.length -= 1;
-                if range.length == 0 {
-                    collection.remove(range_index-1);
-                }
-            }
-        } else if is_not_last && identity == range.begin+range.length-1 {
-            range.length -= 1;
-        } else {
-            let count = identity-range.begin;
-            let prev_begin = range.begin;
-            range.begin = identity+1;
-            if range.length > 0 {
-                range.length -= 1+count;
-            }
-            collection.insert(range_index-1, IdentityRange{begin: prev_begin, length: count});
-        }
-        true
-    }
-
-    pub fn insert(&mut self, identity: Identity) -> bool {
-        let collection = &mut self.0;
-        let range_index = match collection.binary_search_by(|probe| if probe.begin <= identity { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }) {
-            Ok(index) => index,
-            Err(index) => index
-        };
-        let merge_prev_range = if range_index > 0 {
-            match &collection.get(range_index-1) {
-                Some(prev_range) => {
-                    if range_index == collection.len() || identity < prev_range.begin+prev_range.length {
-                        return false;
-                    }
-                    prev_range.begin+prev_range.length == identity
-                },
-                None => false
-            }
-        } else { false };
-        let merge_next_range = match &collection.get(range_index) {
-            Some(next_range) => { identity+1 == next_range.begin },
-            None => false
-        };
-        if merge_prev_range && merge_next_range {
-            let is_not_last = range_index+1 < collection.len();
-            let prev_range = collection[range_index-1];
-            let next_range = &mut collection[range_index];
-            next_range.begin = prev_range.begin;
-            if is_not_last {
-                next_range.length += 1+prev_range.length;
-            }
-            collection.remove(range_index-1);
-        } else if merge_prev_range {
-            let prev_range = &mut collection[range_index-1];
-            prev_range.length += 1;
-        } else if merge_next_range {
-            let next_range = &mut collection[range_index];
-            next_range.begin -= 1;
-            if next_range.length > 0 {
-                next_range.length += 1;
-            }
-        } else {
-            collection.insert(range_index, IdentityRange{begin: identity, length: 1});
-        }
-        true
-    }
-}
-
-type GammaCollection = HashSet<Symbol>;
-type BetaCollection = HashMap<Symbol, GammaCollection>;
-type AlphaCollection = HashMap<Identity, SymbolHandle>;
+type GammaCollection = HashSet<symbol::Symbol>;
+type BetaCollection = HashMap<symbol::Symbol, GammaCollection>;
+type AlphaCollection = HashMap<symbol::Identity, SymbolHandle>;
 
 struct SymbolHandle {
     data_content: RefCell<Box<[usize]>>,
@@ -122,11 +17,11 @@ struct SymbolHandle {
 }
 
 struct NamespaceHandle {
-    free_pool: IdentityPool,
+    free_pool: symbol::IdentityPool,
     symbol_index: AlphaCollection
 }
 
-type NamespaceIndex = HashMap<Identity, NamespaceHandle>;
+type NamespaceIndex = HashMap<symbol::Identity, NamespaceHandle>;
 
 #[derive(Clone, Copy)]
 pub enum TripleIndex {
@@ -190,29 +85,29 @@ thread_local!(static NAMESPACE_INDEX: RefCell<NamespaceIndex> = RefCell::new(Has
 
 
 
-fn manifest_namespace(namespace_index: &mut NamespaceIndex, namespace_identity: Identity) {
+fn manifest_namespace(namespace_index: &mut NamespaceIndex, namespace_identity: symbol::Identity) {
     if !namespace_index.contains_key(&namespace_identity) {
-        let namespace_handle = NamespaceHandle{free_pool: IdentityPool::new(), symbol_index: AlphaCollection::new()};
+        let namespace_handle = NamespaceHandle{free_pool: symbol::IdentityPool::new(), symbol_index: AlphaCollection::new()};
         assert!(namespace_index.insert(namespace_identity, namespace_handle).is_none());
     }
 }
 
-fn get_symbol_handle_mut(namespace_index: &mut NamespaceIndex, symbol: Symbol) -> Option<&mut SymbolHandle> {
+fn get_symbol_handle_mut(namespace_index: &mut NamespaceIndex, symbol: symbol::Symbol) -> Option<&mut SymbolHandle> {
     match namespace_index.get_mut(&symbol.0) {
         Some(namespace_handle) => namespace_handle.symbol_index.get_mut(&symbol.1),
         None => None
     }
 }
 
-fn get_symbol_handle(namespace_index: &NamespaceIndex, symbol: Symbol) -> Option<&SymbolHandle> {
+fn get_symbol_handle(namespace_index: &NamespaceIndex, symbol: symbol::Symbol) -> Option<&SymbolHandle> {
     match namespace_index.get(&symbol.0) {
         Some(namespace_handle) => namespace_handle.symbol_index.get(&symbol.1),
         None => None
     }
 }
 
-fn manifest_symbol_internal(namespace_index: &mut NamespaceIndex, symbol: Symbol) -> bool {
-    if symbol == Symbol(META_NAMESPACE_IDENTITY, META_NAMESPACE_IDENTITY) {
+fn manifest_symbol_internal(namespace_index: &mut NamespaceIndex, symbol: symbol::Symbol) -> bool {
+    if symbol == symbol::Symbol(META_NAMESPACE_IDENTITY, META_NAMESPACE_IDENTITY) {
         manifest_namespace(namespace_index, META_NAMESPACE_IDENTITY);
     }
     let namespace_handle = namespace_index.get_mut(&symbol.0).unwrap();
@@ -228,25 +123,25 @@ fn manifest_symbol_internal(namespace_index: &mut NamespaceIndex, symbol: Symbol
     return true;
 }
 
-pub fn manifest_symbol(symbol: Symbol) -> bool {
+pub fn manifest_symbol(symbol: symbol::Symbol) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
         manifest_symbol_internal(&mut namespace_index, symbol)
     })
 }
 
-pub fn create_symbol(namespace_identity: Identity) -> Symbol {
+pub fn create_symbol(namespace_identity: symbol::Identity) -> symbol::Symbol {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
         let namespace_handle = namespace_index.get_mut(&namespace_identity).unwrap();
-        let symbol_identity: Identity = namespace_handle.free_pool.get();
-        let symbol = Symbol{0: namespace_identity, 1: symbol_identity};
+        let symbol_identity: symbol::Identity = namespace_handle.free_pool.get();
+        let symbol = symbol::Symbol{0: namespace_identity, 1: symbol_identity};
         manifest_symbol_internal(&mut namespace_index, symbol);
         symbol
     })
 }
 
-pub fn release_symbol(symbol: Symbol) -> bool {
+pub fn release_symbol(symbol: symbol::Symbol) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
         match namespace_index.get_mut(&symbol.0) {
@@ -274,7 +169,7 @@ pub fn release_symbol(symbol: Symbol) -> bool {
 
 
 
-pub fn get_length(symbol: Symbol) -> usize {
+pub fn get_length(symbol: symbol::Symbol) -> usize {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let namespace_index = namespace_index_cell.borrow();
         match get_symbol_handle(&namespace_index, symbol) {
@@ -284,7 +179,7 @@ pub fn get_length(symbol: Symbol) -> usize {
     })
 }
 
-pub fn crease_length(symbol: Symbol, offset: usize, length: isize) -> bool {
+pub fn crease_length(symbol: symbol::Symbol, offset: usize, length: isize) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
         match get_symbol_handle_mut(&mut namespace_index, symbol) {
@@ -323,7 +218,7 @@ pub fn crease_length(symbol: Symbol, offset: usize, length: isize) -> bool {
     })
 }
 
-pub fn read_data(symbol: Symbol, offset: usize, length: usize, dst: &mut [usize]) -> bool {
+pub fn read_data(symbol: symbol::Symbol, offset: usize, length: usize, dst: &mut [usize]) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let namespace_index = namespace_index_cell.borrow();
         match get_symbol_handle(&namespace_index, symbol) {
@@ -345,7 +240,7 @@ pub fn read_data(symbol: Symbol, offset: usize, length: usize, dst: &mut [usize]
     })
 }
 
-pub fn write_data(symbol: Symbol, offset: usize, length: usize, src: &[usize]) -> bool {
+pub fn write_data(symbol: symbol::Symbol, offset: usize, length: usize, src: &[usize]) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
         match get_symbol_handle_mut(&mut namespace_index, symbol) {
@@ -367,7 +262,7 @@ pub fn write_data(symbol: Symbol, offset: usize, length: usize, src: &[usize]) -
     })
 }
 
-pub fn replace_data(dst_symbol: Symbol, dst_offset: usize, src_symbol: Symbol, src_offset: usize, length: usize) -> bool {
+pub fn replace_data(dst_symbol: symbol::Symbol, dst_offset: usize, src_symbol: symbol::Symbol, src_offset: usize, length: usize) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let namespace_index = namespace_index_cell.borrow();
         let dst_symbol_handle = match get_symbol_handle(&namespace_index, dst_symbol) {
@@ -388,7 +283,7 @@ pub fn replace_data(dst_symbol: Symbol, dst_offset: usize, src_symbol: Symbol, s
 
 
 
-fn set_triple_subindex(beta_self: &mut BetaCollection, beta: Symbol, gamma: Symbol, linked: bool) -> bool {
+fn set_triple_subindex(beta_self: &mut BetaCollection, beta: symbol::Symbol, gamma: symbol::Symbol, linked: bool) -> bool {
     if linked {
         match beta_self.get_mut(&beta) {
             Some(gamma_self) => { gamma_self.insert(gamma) },
@@ -439,10 +334,10 @@ pub fn set_triple(triple: Triple, linked: bool) -> bool {
     })
 }
 
-pub fn query_symbols(namespace_identity: Identity) -> Vec<Identity> {
+pub fn query_symbols(namespace_identity: symbol::Identity) -> Vec<symbol::Identity> {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let namespace_index = namespace_index_cell.borrow();
-        let mut result: Vec<Identity> = vec![];
+        let mut result: Vec<symbol::Identity> = vec![];
         match namespace_index.get(&namespace_identity) {
             Some(namespace_handle) => {
                 for key in namespace_handle.symbol_index.keys() {
@@ -559,7 +454,7 @@ pub fn query_triples(mask: usize, mut triple: Triple) -> Vec<Triple> {
                         if symbol_handle.subindices[triple_index as usize].is_empty() {
                             continue;
                         }
-                        triple[0] = Symbol{0: *namespace_identity, 1: *symbol_identity};
+                        triple[0] = symbol::Symbol{0: *namespace_identity, 1: *symbol_identity};
                         result.push(reorder_triple(&TRIPLE_NORMALIZED, triple_index, &triple));
                     }
                 }
@@ -567,7 +462,7 @@ pub fn query_triples(mask: usize, mut triple: Triple) -> Vec<Triple> {
             TripleQueryFunc::SearchVVI => {
                 for (namespace_identity, namespace_handle) in namespace_index.iter() {
                     for (symbol_identity, symbol_handle) in namespace_handle.symbol_index.iter() {
-                        triple[0] = Symbol{0: *namespace_identity, 1: *symbol_identity};
+                        triple[0] = symbol::Symbol{0: *namespace_identity, 1: *symbol_identity};
                         for beta in symbol_handle.subindices[triple_index as usize].keys() {
                             triple[1] = *beta;
                             result.push(reorder_triple(&TRIPLE_NORMALIZED, triple_index, &triple));
@@ -578,7 +473,7 @@ pub fn query_triples(mask: usize, mut triple: Triple) -> Vec<Triple> {
             TripleQueryFunc::SearchVVV => {
                 for (namespace_identity, namespace_handle) in namespace_index.iter() {
                     for (symbol_identity, symbol_handle) in namespace_handle.symbol_index.iter() {
-                        triple[0] = Symbol{0: *namespace_identity, 1: *symbol_identity};
+                        triple[0] = symbol::Symbol{0: *namespace_identity, 1: *symbol_identity};
                         for (beta, gamma_self) in symbol_handle.subindices[triple_index as usize].iter() {
                             triple[1] = *beta;
                             for gamma in gamma_self.iter() {
