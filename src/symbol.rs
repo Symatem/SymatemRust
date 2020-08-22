@@ -32,6 +32,10 @@ impl VecIdentityPool {
         self.collection[0].begin
     }
 
+    pub fn is_full(&mut self) -> bool {
+        self.collection.len() == 1 && self.get() == 0
+    }
+
     pub fn remove(&mut self, identity: Identity) -> bool {
         let range_index = match self.collection.binary_search_by(|probe| if probe.begin <= identity { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }) {
             Ok(index) => index,
@@ -141,6 +145,10 @@ impl BTreeIdentityPool {
 
     pub fn get(&mut self) -> Identity {
         *self.collection.iter().next().unwrap().0
+    }
+
+    pub fn is_full(&mut self) -> bool {
+        self.collection.len() == 1 && self.get() == 0
     }
 
     fn find(&mut self, identity: Identity) -> usize {

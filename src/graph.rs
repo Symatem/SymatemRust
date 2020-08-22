@@ -144,13 +144,27 @@ pub fn create_symbol(namespace_identity: symbol::Identity) -> symbol::Symbol {
 pub fn release_symbol(symbol: symbol::Symbol) -> bool {
     NAMESPACE_INDEX.with(|namespace_index_cell| {
         let mut namespace_index = namespace_index_cell.borrow_mut();
+        if symbol.0 == META_NAMESPACE_IDENTITY {
+            match namespace_index.get_mut(&symbol.1) {
+                Some(namespace_handle) => {
+                    if !namespace_handle.free_pool.is_full() {
+                        return false;
+                    }
+                },
+                None => { return false; }
+            }
+        }
         match namespace_index.get_mut(&symbol.0) {
             Some(namespace_handle) => {
                 match namespace_handle.symbol_index.get(&symbol.1) {
                     Some(symbol_handle) => {
-                        assert!(symbol_handle.data_length == 0);
+                        if symbol_handle.data_length > 0 {
+                            return false;
+                        }
                         for subindex in &symbol_handle.subindices {
-                            assert!(subindex.len() == 0);
+                            if subindex.len() > 0 {
+                                return false;
+                            }
                         }
                     },
                     None => { return false; }
