@@ -99,8 +99,13 @@ pub fn creaseLength(namespace_identity: symbol::Identity, symbol_identity: symbo
 }
 
 #[wasm_bindgen]
-pub fn readData(namespace_identity: symbol::Identity, symbol_identity: symbol::Identity, offset: usize, length: usize, dst: &mut [usize]) -> bool {
-    graph::read_data(symbol::Symbol(namespace_identity, symbol_identity), offset, length, dst)
+pub fn readData(namespace_identity: symbol::Identity, symbol_identity: symbol::Identity, offset: usize, length: usize) -> Option<Vec<u8>> {
+    let mut dst: Vec<usize> = vec![0; (length+bitops::ARCHITECTURE_SIZE-1)/bitops::ARCHITECTURE_SIZE];
+    if graph::read_data(symbol::Symbol(namespace_identity, symbol_identity), offset, length, &mut dst) {
+        Some(unsafe { transmute_vec::<usize, u8>(dst) })
+    } else {
+        None
+    }
 }
 
 #[wasm_bindgen]
